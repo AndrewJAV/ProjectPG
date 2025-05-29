@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Python with X11 session",
+      "type": "shell",
+      "command": "python",
+      "args": ["main.py"],
+      "options": {
+        "env": {
+          "XDG_SESSION_TYPE": "x11"
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "detail": "Ejecuta main.py con XDG_SESSION_TYPE=x11"
+    }
+  ]
+}

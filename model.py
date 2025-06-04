@@ -129,4 +129,6 @@ class Model:
         glBindTexture(GL_TEXTURE_2D, 0)
         glDisable(GL_TEXTURE_2D)
         glPopMatrix()
+    
+
         

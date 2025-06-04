@@ -4,6 +4,9 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 import math
 import numpy as np
+import math
+
+
 
 def aabb_intersect(a_min, a_max, b_min, b_max):
     return all(a_min[i] <= b_max[i] and a_max[i] >= b_min[i] for i in range(3))
@@ -24,6 +27,7 @@ class Camera:
         self.position = list(position)
         self.yaw = 0.0
         self.pitch = 0.0
+        self.roll = 0.0
         self.sensitivity = sensitivity
         self.speed = speed
         self.mouse_locked = False
@@ -35,6 +39,9 @@ class Camera:
 
         pygame.event.set_grab(False)
         pygame.mouse.set_visible(True)
+        
+    def get_rotation(self):
+        return (self.pitch, self.yaw, self.roll)
 
     def get_direction(self):
         yaw_rad = math.radians(self.yaw)
@@ -157,3 +164,15 @@ class Camera:
             # Detecta colisión con el suelo, detiene caída
             self.vertical_velocity = 0.0
             self.is_on_ground = True
+
+    def get_forward_vector(self):
+        # Usando yaw y pitch para calcular la dirección frontal
+        from math import radians, cos, sin
+        yaw_rad = radians(self.yaw)
+        pitch_rad = radians(self.pitch)
+
+        x = cos(pitch_rad) * sin(yaw_rad)
+        y = sin(pitch_rad)
+        z = -cos(pitch_rad) * cos(yaw_rad)
+
+        return (x, y, z)

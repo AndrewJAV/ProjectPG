@@ -63,20 +63,40 @@ def main():
         
         mouse_buttons = pygame.mouse.get_pressed()
 
-        if mouse_buttons[0]:  # clic izquierdo
-            if can_shoot:
-                bullet_position = (
-                    camera.position[0] + 0.4,
-                    camera.position[1] - 0.3,
-                    camera.position[2] - 1.5
-                )
-                bullet_direction = camera.get_forward_vector()  # o como lo tengas implementado
-                bullet_rotation = camera.get_rotation()  # pitch, yaw, roll
+        import numpy as np
 
-                bullet = Bullet("bullet.obj", position=bullet_position,
-                                direction=bullet_direction, rotation=bullet_rotation)
+        if mouse_buttons[0]:
+            if can_shoot:
+                direction = camera.get_forward_vector()
+
+                # Offset local: (derecha, abajo, hacia adelante desde POV del jugador)
+                local_offset = np.array([0.4, -0.3, -1.0], dtype=np.float32)
+
+                yaw = np.radians(camera.yaw)
+                pitch = np.radians(camera.pitch)
+
+                cos_y = np.cos(yaw)
+                sin_y = np.sin(yaw)
+                cos_p = np.cos(pitch)
+                sin_p = np.sin(pitch)
+
+                # Rotación combinada: primero pitch (X), luego yaw (Y)
+                rotation_matrix = np.array([
+                    [cos_y, sin_p * sin_y, -cos_p * sin_y],
+                    [0,     cos_p,         sin_p],
+                    [sin_y, -sin_p * cos_y, cos_p * cos_y]
+                ])
+                # Transformar el offset local a coordenadas globales
+                world_offset = rotation_matrix @ local_offset
+
+                # Posición final: cámara + offset rotado
+                start_position = camera.position + world_offset
+
+                # Crear y agregar la bala
+                bullet = Bullet("bullet.obj", position=start_position, direction=direction)
                 bullets.append(bullet)
                 can_shoot = False
+
 
         else:
             can_shoot = True

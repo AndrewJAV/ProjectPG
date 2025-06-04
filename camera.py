@@ -5,6 +5,7 @@ from OpenGL.GLU import *
 import math
 import numpy as np
 import math
+from math import radians, cos, sin
 
 
 
@@ -133,7 +134,6 @@ class Camera:
         # Siempre aplicar gravedad al final del frame
         self.apply_gravity(dt)
 
-    
     def apply_view(self):
         direction = self.get_direction()
         target = [self.position[i] + direction[i] for i in range(3)]
@@ -167,7 +167,6 @@ class Camera:
 
     def get_forward_vector(self):
         # Usando yaw y pitch para calcular la dirección frontal
-        from math import radians, cos, sin
         yaw_rad = radians(self.yaw)
         pitch_rad = radians(self.pitch)
 
@@ -176,3 +175,12 @@ class Camera:
         z = -cos(pitch_rad) * cos(yaw_rad)
 
         return (x, y, z)
+
+    def get_forward_vector_array(self):
+        pitch_rad = np.radians(self.pitch)
+        yaw_rad = np.radians(self.yaw)
+
+        x = np.sin(yaw_rad) * np.cos(pitch_rad)
+        y = np.sin(pitch_rad)
+        z = -np.cos(yaw_rad) * np.cos(pitch_rad)
+        return np.array([x, y, z], dtype=np.float32)

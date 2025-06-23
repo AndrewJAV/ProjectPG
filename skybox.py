@@ -1,90 +1,74 @@
+import glm
 import os
-from OpenGL.GL import *
-from PIL import Image
 import numpy as np
+import moderngl
+from PIL import Image
 
 class Skybox:
-    def __init__(self, folder_path="textures/skybox"):
-        self.folder_path = folder_path
-        self.texture_id = glGenTextures(1)
-        self.load_cubemap()
+    def __init__(self, ctx, program, folder_path="textures/skybox"):
+        self.ctx = ctx
+        self.program = program
+        self.texture = self.load_cubemap(folder_path)
+        self.cube = self.create_cube()
 
-    def load_cubemap(self):
+    def load_cubemap(self, folder_path):
         face_files = [
             "right.jpg", "left.jpg", "top.jpg",
             "bottom.jpg", "back.jpg", "front.jpg"
         ]
-        targets = [
-            GL_TEXTURE_CUBE_MAP_POSITIVE_X, GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
-            GL_TEXTURE_CUBE_MAP_POSITIVE_Y, GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
-            GL_TEXTURE_CUBE_MAP_POSITIVE_Z, GL_TEXTURE_CUBE_MAP_NEGATIVE_Z
-        ]
 
-        glBindTexture(GL_TEXTURE_CUBE_MAP, self.texture_id)
+        images = []
+        width = height = None
+
+        for face in face_files:
+            path = os.path.join(folder_path, face)
+            img = Image.open(path).convert("RGB")
+            
+            # Verifica o ajusta tamaño
+            if width is None:
+                width, height = img.size
+            else:
+                img = img.resize((width, height))
+
+            images.append(np.array(img, dtype=np.uint8))
+
+        # Crear textura cubemap
+        texture = self.ctx.texture_cube((width, height), 3)
         for i in range(6):
-            path = os.path.join(self.folder_path, face_files[i])
-            image = Image.open(path).convert("RGB")
-            img_data = np.array(image, dtype=np.uint8)
-            glTexImage2D(targets[i], 0, GL_RGB, image.width, image.height, 0,
-                         GL_RGB, GL_UNSIGNED_BYTE, img_data)
+            texture.write(face=i, data=images[i])
 
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
+        texture.build_mipmaps()
+        texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        texture.use(location=0)
+        return texture
 
-    def draw(self, camera_position):
-        glPushAttrib(GL_ALL_ATTRIB_BITS)
-        size = 50.0  # Tamaño grande para alejar las paredes
+    def create_cube(self):
+        # Vértices de un cubo unitario centrado en el origen
+        vertices = np.array([
+            -1,  1, -1,  -1, -1, -1,   1, -1, -1,   1, -1, -1,   1,  1, -1,  -1,  1, -1,  # back
+            -1, -1,  1,  -1, -1, -1,  -1,  1, -1,  -1,  1, -1,  -1,  1,  1,  -1, -1,  1,  # left
+             1, -1, -1,   1, -1,  1,   1,  1,  1,   1,  1,  1,   1,  1, -1,   1, -1, -1,  # right
+            -1, -1,  1,  -1,  1,  1,   1,  1,  1,   1,  1,  1,   1, -1,  1,  -1, -1,  1,  # front
+            -1,  1, -1,   1,  1, -1,   1,  1,  1,   1,  1,  1,  -1,  1,  1,  -1,  1, -1,  # top
+            -1, -1, -1,  -1, -1,  1,   1, -1, -1,   1, -1, -1,  -1, -1,  1,   1, -1,  1   # bottom
+        ], dtype='f4')
 
-        glPushMatrix()
-        glDepthMask(GL_FALSE)  # Desactiva la escritura en el z-buffer
-        glDisable(GL_LIGHTING)
-        glDisable(GL_DEPTH_TEST)
-        glEnable(GL_TEXTURE_CUBE_MAP)
-        glBindTexture(GL_TEXTURE_CUBE_MAP, self.texture_id)
+        vbo = self.ctx.buffer(vertices)
+        vao = self.ctx.simple_vertex_array(self.program, vbo, 'in_position')
+        return vao
 
-        glTranslatef(*camera_position)
+    def draw(self, proj, view):
+        # Eliminar la traslación para que la skybox siga a la cámara
+        view_no_translation = glm.mat4(glm.mat3(view))
 
-        glBegin(GL_QUADS)
-        # +X
-        glTexCoord3f(1, -1, -1); glVertex3f(size, -size, -size)
-        glTexCoord3f(1, -1,  1); glVertex3f(size, -size, size)
-        glTexCoord3f(1,  1,  1); glVertex3f(size, size, size)
-        glTexCoord3f(1,  1, -1); glVertex3f(size, size, -size)
-        # -X
-        glTexCoord3f(-1, -1,  1); glVertex3f(-size, -size, size)
-        glTexCoord3f(-1, -1, -1); glVertex3f(-size, -size, -size)
-        glTexCoord3f(-1,  1, -1); glVertex3f(-size, size, -size)
-        glTexCoord3f(-1,  1,  1); glVertex3f(-size, size, size)
-        # +Y
-        glTexCoord3f(-1, 1, -1); glVertex3f(-size, size, -size)
-        glTexCoord3f(1, 1, -1);  glVertex3f(size, size, -size)
-        glTexCoord3f(1, 1, 1);   glVertex3f(size, size, size)
-        glTexCoord3f(-1, 1, 1);  glVertex3f(-size, size, size)
-        # -Y
-        glTexCoord3f(-1, -1, 1); glVertex3f(-size, -size, size)
-        glTexCoord3f(1, -1, 1);  glVertex3f(size, -size, size)
-        glTexCoord3f(1, -1, -1); glVertex3f(size, -size, -size)
-        glTexCoord3f(-1, -1, -1);glVertex3f(-size, -size, -size)
-        # -Z
-        glTexCoord3f(1, -1, -1); glVertex3f(size, -size, -size)
-        glTexCoord3f(1, 1, -1);  glVertex3f(size, size, -size)
-        glTexCoord3f(-1, 1, -1); glVertex3f(-size, size, -size)
-        glTexCoord3f(-1, -1, -1);glVertex3f(-size, -size, -size)
-        # +Z
-        glTexCoord3f(-1, -1, 1); glVertex3f(-size, -size, size)
-        glTexCoord3f(-1, 1, 1);  glVertex3f(-size, size, size)
-        glTexCoord3f(1, 1, 1);   glVertex3f(size, size, size)
-        glTexCoord3f(1, -1, 1);  glVertex3f(size, -size, size)
-        
-        glEnd()
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.depth_func = '<='  # O `LEQUAL` para evitar errores de profundidad en la skybox
 
-        glDisable(GL_TEXTURE_CUBE_MAP)
-        glEnable(GL_DEPTH_TEST)
-        glEnable(GL_LIGHTING)
-        glDepthMask(GL_TRUE)
-        glDepthFunc(GL_LESS)    # Restaurar para los modelos
-        glPopMatrix()
-        glPopAttrib()
+        self.texture.use(location=0)
+        self.program['projection'].write(proj.to_bytes())
+        self.program['view'].write(view_no_translation.to_bytes())
+        self.cube.render(moderngl.TRIANGLES)
+
+        self.ctx.enable(moderngl.DEPTH_TEST)
+        self.ctx.depth_func = '<'  # Restaurar profundidad para otros objetos
+

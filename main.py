@@ -1,130 +1,137 @@
+import glm
 import pygame
+import moderngl
 import numpy as np
-from pygame.locals import *
-from OpenGL.GL import *
-from OpenGL.GLU import *
+from light import Light
 from model import Model
+from rifle import Rifle
 from camera import Camera
 from skybox import Skybox
-from weaponview import WeaponView
-from axes import draw_axes 
-from bullet import Bullet
+from weapon import Weapon
+from player import Player
+from pistol import Pistol
+from shotgun import Shotgun
+from crosshair import Crosshair
+from blue_drone import BlueDrone
+from green_drone import GreenDrone
+from orange_drone import OrangeDrone
+from static_model import StaticModel
+from shader import LoadShaderProgram
+from healthbar import HealthBarRenderer
+from invisible_model import InvisibleModel
+from bullet_manager import BulletManager
+from pygame.locals import DOUBLEBUF, OPENGL
+from trimesh.collision import CollisionManager
 
-
-models = [
-    Model("rfloor.obj", position=(0,-3, 0), scale=4.0),
-    Model("pistol.obj", position=(1, 0, 0), scale=1.2),
-    Model("bullet.obj", position=(2, 0, 0), scale=1.0),
-    #Model("shotgun.obj", position=(2, 0, 0), scale=1.2),
-    #Model("rifle.obj", position=(3, 0, 0), scale=1.2),
-    #Model("GreenDrone.obj", position=(5, 0, 0), scale=1.0),
-    #Model("BlueDrone.obj", position=(7, 0, 0), scale=1.2),
-    #Model("WhiteDrone.obj", position=(7, 0, 0), scale=1.2),
-]
-bullets = []
-
-def main(): 
+def main():
     pygame.init()
-    screen = pygame.display.set_mode((800, 600), DOUBLEBUF | OPENGL)
-    pygame.display.set_caption("UNI RedCode")
-    camera = Camera(models=models)
-    skybox = Skybox()
-
-    glEnable(GL_DEPTH_TEST)
-    glEnable(GL_COLOR_MATERIAL)
-    glEnable(GL_LIGHTING)          # Habilita iluminación
-    glEnable(GL_LIGHT0)            # Habilita una fuente de luz
-    glShadeModel(GL_SMOOTH)        # Sombreado suave
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
-
-    # Color de fondo
-    glClearColor(0.52, 0.63, 0.90, 1)
-
-    # Configuración de la proyección
-    glMatrixMode(GL_PROJECTION)
-    gluPerspective(45, (800 / 600), 0.1, 100.0)
-    glMatrixMode(GL_MODELVIEW) 
+    pygame.display.set_mode((1200, 900), DOUBLEBUF | OPENGL)
+    pygame.display.set_caption("Event RedCode")
+    pygame.event.set_grab(True)   # Hide and blocks cursor
+    pygame.mouse.set_visible(False) 
+    
+    ctx = moderngl.create_context()
+    ctx.enable(moderngl.DEPTH_TEST)
+    
+    shader = LoadShaderProgram(ctx, "polylight")
+    crosshair_shader = LoadShaderProgram(ctx, "crosshair")
+    healthbar_shader = LoadShaderProgram(ctx, "healthbar")
+    skybox_shader = LoadShaderProgram(ctx, "skybox") 
+    obb_shader = LoadShaderProgram(ctx, "obb") #debug only
+    
     clock = pygame.time.Clock()
-
-    pygame.event.set_grab(False)
-    pygame.mouse.set_visible(True)
-    weapon = WeaponView("rifle.obj", scale=1.0)
-
-    # Propiedades de la luz
-    light_pos = [10.0, 5.0, -2.0, 1.0]  # Posición (último valor 1.0 = posicional)
-    light_color = [1.0, 1.0, 1.0, 1.0]  # Luz blanca
-    light_ambient = [0.2, 0.2, 0.2, 1.0]
-
-    can_shoot = True
+    width, height = pygame.display.get_surface().get_size()
+    proj = glm.perspective(glm.radians(45.0), width / height, 0.1, 100.0) 
+    
+    player = Player((20, 2, 5))
+    crosshair = Crosshair(ctx, crosshair_shader)
+    skybox = Skybox(ctx, skybox_shader, folder_path="textures/skybox")
+    bullet_manager = BulletManager(ctx, shader, player)
+    health_renderer = HealthBarRenderer(ctx, healthbar_shader)
+    
+    static_models = [
+        Model(ctx, shader, "UNI.obj", position=(20,0,0)),
+        #Model(ctx, shader, "room.obj", position=(0,-1,0), name="room"), 
+        Model(ctx, shader, "large_grass.obj", position=(20,0,0)),
+        #Model(ctx, shader, "colored.obj", position=(20,0,0)), 
+        Model(ctx, shader, "pilars.obj", position=(20,0,0)),
+        Model(ctx, shader, "roof_floor.obj", position=(20,0,0), visible=False),
+       # Model(ctx, shader, "walls.obj", position=(20,0,0), visible=False),
+        #Model(ctx, shader, "walls.obj", position=(20,0,0)),
+    ]
+    
+    static_models[0].remove_colliders()
+    #static_models[2].remove_colliders()
+    
+    weapons = [
+        Pistol(ctx, shader, player),
+        Rifle(ctx, shader, player),
+        Shotgun(ctx, shader, player), 
+    ]
+    
+    lights = [
+        Light(position=(20,1,0), color=(1,1,1), ambient_strength=0.2, specular_strength=0.9),
+    ]
+    
+    drones = [
+        OrangeDrone(ctx, shader, position=(8, 1, 0), bullet_manager=bullet_manager),
+        GreenDrone(ctx, shader, position=(6, 1, 0), bullet_manager=bullet_manager,all_drones=[]),
+        BlueDrone(ctx, shader, position=(0, 1, 3), bullet_manager=bullet_manager),
+        BlueDrone(ctx, shader, position=(2, 1, 3), bullet_manager=bullet_manager),
+        BlueDrone(ctx, shader, position=(4, 1, 3), bullet_manager=bullet_manager),
+    ]
+    
+    drones[2].all_drones = drones
+    
+    player.weapons = weapons
+    player.heldweapon = player.weapons[0]
+    
+    Light.insert_lights(shader, lights, player.pos)
+    obstacles = static_models + drones #+ [player.camera]
     
     while True:
-        dt = clock.tick(60) / 1000.0
-        camera.handle_inputs(dt)
+        dt = clock.tick(60) / 1000.0 # Delta Time
         
-        mouse_buttons = pygame.mouse.get_pressed()
-
-        import numpy as np
-
-        if mouse_buttons[0]:
-            if can_shoot:
-                direction = camera.get_forward_vector()
-
-                # Offset local: (derecha, abajo, hacia adelante desde POV del jugador)
-                local_offset = np.array([0.4, -0.3, -1.0], dtype=np.float32)
-
-                yaw = np.radians(camera.yaw)
-                pitch = np.radians(camera.pitch)
-
-                cos_y = np.cos(yaw)
-                sin_y = np.sin(yaw)
-                cos_p = np.cos(pitch)
-                sin_p = np.sin(pitch)
-
-                # Rotación combinada: primero pitch (X), luego yaw (Y)
-                rotation_matrix = np.array([
-                    [cos_y, sin_p * sin_y, -cos_p * sin_y],
-                    [0,     cos_p,         sin_p],
-                    [sin_y, -sin_p * cos_y, cos_p * cos_y]
-                ])
-                # Transformar el offset local a coordenadas globales
-                world_offset = rotation_matrix @ local_offset
-
-                # Posición final: cámara + offset rotado
-                start_position = camera.position + world_offset
-
-                # Crear y agregar la bala
-                bullet = Bullet("bullet.obj", position=start_position, direction=direction)
-                bullets.append(bullet)
-                can_shoot = False
-
-
-        else:
-            can_shoot = True
-
-
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glLoadIdentity()
+        events = pygame.event.get()
+        for event in events:
+            if event.type == pygame.QUIT:
+                exit()
         
-        camera.apply_view()
-
-        # Establecer luz en cada frame (debe ir después del view)
-        glLightfv(GL_LIGHT0, GL_POSITION, light_pos)
-        glLightfv(GL_LIGHT0, GL_DIFFUSE, light_color)
-        glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient)
-
-        skybox.draw(camera.position)
-        draw_axes()
+        keys = pygame.key.get_pressed()
+        mx, my = pygame.mouse.get_rel()
         
-        glColor3f(1.0, 1.0, 1.0)
-        for model in models:
-            model.draw()
-            
-        for bullet in bullets:
-            bullet.update(dt)
-            bullet.draw()
+        tn = pygame.time.get_ticks() / 1000.0  # en segundos
+        player.camera.update(dt)
+        view = player.camera.get_view_matrix(keys, mx, my, obstacles)
+        player.handle_input(tn, events) 
         
-        weapon.draw()
+        ctx.clear(0.5, 0.8, 0.9)
+        skybox.draw(proj, view)
+        bullet_manager.update(dt, obstacles)
+        bullet_manager.draw(proj, view, player.pos)
+        
+        crosshair.draw()
+        player.heldweapon.update(dt)
+        player.heldweapon.draw(shader, proj, view) 
+        for model in static_models:
+            model.draw(shader, proj, view, player.pos)
+            #model.draw_obb(obb_shader, proj, view)
+        for drone in drones:
+            drone.update(dt, player.pos, obstacles)
+            drone.draw(shader, proj, view, player.pos)
+            health_renderer.draw(proj, view, drone, player.pos)
+            #drone.draw_obb(obb_shader, proj, view) 
+        
         pygame.display.flip()
-
+        clock.tick(60)
+    
+    pygame.quit()
+    
 if __name__ == "__main__":
     main()
+    
+    
+    
+    
+    
+    

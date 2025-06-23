@@ -1,186 +1,198 @@
+import glm
 import pygame
-from pygame.locals import *
-from OpenGL.GL import *
-from OpenGL.GLU import *
-import math
-import numpy as np
-import math
-from math import radians, cos, sin
-
-
-
-def aabb_intersect(a_min, a_max, b_min, b_max):
-    return all(a_min[i] <= b_max[i] and a_max[i] >= b_min[i] for i in range(3))
-
-def check_camera_collision(camera_aabb, model_aabb, padding=0.0):
-    cam_min, cam_max = camera_aabb
-    mod_min, mod_max = model_aabb
-    mod_min -= padding
-    mod_max += padding
-    return aabb_intersect(cam_min, cam_max, mod_min, mod_max)
-
-def normalize(v):
-    length = math.sqrt(sum(i**2 for i in v))
-    return [i/length for i in v] if length > 0 else [0, 0, 0]
+import random
+from obb import OBB
 
 class Camera:
-    def __init__(self, position=(0.0, 0.0, 6.0), sensitivity=0.2, speed=5.0, models=[]):
-        self.position = list(position)
-        self.yaw = 0.0
+    def __init__(self, position):
+        self.position = glm.vec3(position)
+        self.yaw = -90.0
         self.pitch = 0.0
-        self.roll = 0.0
-        self.sensitivity = sensitivity
-        self.speed = speed
-        self.mouse_locked = False
-        self.models = models  # 🔥 se guarda la referencia a los modelos    
-        self.vertical_velocity = 0.0
-        self.gravity = -9.8  # metros/segundo²
-        self.jump_strength = 5.0
-        self.is_on_ground = False
+        self.front = glm.vec3(0, 0, -1)
+        self.up = glm.vec3(0, 1, 0)
+        self.right = glm.cross(self.front, self.up)
+        self.world_up = glm.vec3(0, 1.1, 0)
+        self.speed = 0.07
+        self.sensitivity = 0.1
+        self.recoil_offset = 0.0
+        self.recoil_decay = 10.0
+        self.update_vectors()
+        self.colliders = []
+        self.rotation_x = 0.0  # rotación extra para animación muerte
+        self.rotation_z = 0.0
 
-        pygame.event.set_grab(False)
-        pygame.mouse.set_visible(True)
+        self.is_dead = False
+        self.death_anim_duration = 0.5  # segundos que dura la animación
+        self.death_anim_elapsed = 0.0
         
-    def get_rotation(self):
-        return (self.pitch, self.yaw, self.roll)
-
-    def get_direction(self):
-        yaw_rad = math.radians(self.yaw)
-        pitch_rad = math.radians(self.pitch)
-        return normalize([
-            math.cos(pitch_rad) * math.sin(yaw_rad),
-            math.sin(pitch_rad),
-            -math.cos(pitch_rad) * math.cos(yaw_rad)
-        ])
-
-    def get_right(self):
-        yaw_rad = math.radians(self.yaw)
-        return normalize([
-            math.sin(yaw_rad - math.pi/2),
-            0,
-            -math.cos(yaw_rad - math.pi/2)
-        ])
-
-    def get_up(self, direction, right):
-        return [
-            right[1]*direction[2] - right[2]*direction[1],
-            right[2]*direction[0] - right[0]*direction[2],
-            right[0]*direction[1] - right[1]*direction[0]
-        ]
-
-    def can_move_to(self, new_pos):
-        # Simula mover la cámara a la nueva posición, y calcula su AABB en esa posición
-        old_pos = self.position
-        self.position = new_pos
-        camera_aabb = self.get_aabb()
-        self.position = old_pos  # Restaura posición real
-
-        for model in self.models:
-            aabb = model.get_aabb()
-            if aabb and check_camera_collision(camera_aabb, aabb):
-                return False
-        return True
-
-    def handle_inputs(self, dt):
-        move = self.speed * dt
-        right = self.get_right()
-        full_direction = self.get_direction()
-        direction = [full_direction[0], 0.0, full_direction[2]]  # solo XZ
-        direction = normalize(direction)
+        self.velocity = glm.vec3(0)        # Velocidad de movimiento totalw
+        self.gravity = -0.008               # Fuerza de gravedad (ajustable)
+        self.jump_strength = 0.15          # Fuerza del salto
+        self.on_ground = False     
         
-        up = self.get_up(direction, right)
         
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                quit()
-            elif event.type == KEYDOWN and event.key == K_ESCAPE:
-                self.mouse_locked = False
-                pygame.event.set_grab(False)
-                pygame.mouse.set_visible(True)
-            elif event.type == MOUSEBUTTONDOWN and event.button == 1 and not self.mouse_locked:
-                self.mouse_locked = True
-                pygame.event.set_grab(True)
-                pygame.mouse.set_visible(False)
-            elif event.type == MOUSEMOTION and self.mouse_locked:
-                dx, dy = event.rel
-                self.yaw += dx * self.sensitivity
-                self.pitch -= dy * self.sensitivity
-                self.pitch = max(-89, min(89, self.pitch))
+    # Método para iniciar animación muerte
+    def start_death_animation(self):
+        self.is_dead = True
+        self.death_anim_elapsed = 0.0
+        self.rotation_x = 0.0
+        self.rotation_z = 0.0
 
-        keys = pygame.key.get_pressed()
+    def update(self, dt):
+        if self.is_dead:
+            self.death_anim_elapsed += dt
+            t = min(self.death_anim_elapsed / self.death_anim_duration, 1.0)
+            # Interpolamos rotaciones de 0 a 90 grados hacia la derecha
+            self.rotation_x = glm.mix(0.0, 90.0, t)
+            self.rotation_z = glm.mix(0.0, 90.0, t)
+            # Opcional: al terminar la animación, podrías hacer algo más
+            # if t >= 1.0:
+            #     print("Animación de muerte terminada")
 
-        def try_move(offset):
-            new_pos = [self.position[i] + offset[i] for i in range(3)]
-            if self.can_move_to(new_pos):
-                self.position = new_pos
+    def apply_recoil(self, vertical_amount=1.5, horizontal_shake=1.0):
+        self.pitch += vertical_amount
+        self.yaw += random.uniform(-horizontal_shake, horizontal_shake)
+        self.pitch = max(-89.0, min(89.0, self.pitch))  # clamp
 
-        if keys[K_w]:
-            try_move([direction[i] * move for i in range(3)])
-        if keys[K_s]:
-            try_move([-direction[i] * move for i in range(3)])
-        if keys[K_a]:
-            try_move([right[i] * move for i in range(3)])
-        if keys[K_d]:
-            try_move([-right[i] * move for i in range(3)])
-        if keys[K_LCTRL] or keys[K_RCTRL]:
-            try_move([0, -move, 0])
-            
-        # Lógica de salto
-        if keys[K_SPACE] and self.is_on_ground:
-            self.vertical_velocity = self.jump_strength
-            self.is_on_ground = False
-
-        # Siempre aplicar gravedad al final del frame
-        self.apply_gravity(dt)
-
-    def apply_view(self):
-        direction = self.get_direction()
-        target = [self.position[i] + direction[i] for i in range(3)]
-        gluLookAt(
-            self.position[0], self.position[1], self.position[2],
-            target[0], target[1], target[2],
-            0.0, 1.0, 0.0
+    def update_vectors(self):
+        rad_yaw = glm.radians(self.yaw)
+        rad_pitch = glm.radians(self.pitch + self.recoil_offset)  # Aplica retroceso aquí
+        front = glm.vec3(
+            glm.cos(rad_yaw) * glm.cos(rad_pitch),
+            glm.sin(rad_pitch),
+            glm.sin(rad_yaw) * glm.cos(rad_pitch)
         )
-
-    def get_aabb(self):
-        # Define un paralelepípedo vertical, más alto que ancho/profundo.
-        half_size = [0.25, 2.0, 0.25]  # ancho (X), alto (Y), profundidad (Z)
-        min_corner = [self.position[i] - half_size[i] for i in range(3)]
-        max_corner = [self.position[i] + half_size[i] for i in range(3)]
-        return (np.array(min_corner), np.array(max_corner))
-
-    def apply_gravity(self, dt):
-        # Aplicar gravedad y colisiones verticales
-        self.vertical_velocity += self.gravity * dt
-        vertical_move = self.vertical_velocity * dt
-        new_pos = self.position.copy()
-        new_pos[1] += vertical_move
-
-        if self.can_move_to(new_pos):
-            self.position[1] = new_pos[1]
-            self.is_on_ground = False
+        self.front = glm.normalize(front)
+        self.right = glm.normalize(glm.cross(self.front, self.world_up))
+        self.up = glm.normalize(glm.cross(self.right, self.front))
+    
+    def update_recoil(self, dt):
+        # Decae suavemente el retroceso
+        if abs(self.recoil_offset) > 0.0001:
+            direction = -glm.sign(self.recoil_offset)
+            decay = self.recoil_decay * dt * direction
+            self.recoil_offset += decay
+            if glm.sign(self.recoil_offset) != direction:
+                self.recoil_offset = 0.0  # Clamp cuando cruza 0
         else:
-            # Detecta colisión con el suelo, detiene caída
-            self.vertical_velocity = 0.0
-            self.is_on_ground = True
+            self.recoil_offset = 0.0
 
-    def get_forward_vector(self):
-        # Usando yaw y pitch para calcular la dirección frontal
-        yaw_rad = radians(self.yaw)
-        pitch_rad = radians(self.pitch)
+    def handle_mouse_motion(self, dx, dy):
+        
+        if not self.is_dead:
+            self.yaw += dx * self.sensitivity
+            self.pitch -= dy * self.sensitivity
+            self.pitch = max(-89.0, min(89.0, self.pitch))
+        self.update_vectors()
 
-        x = cos(pitch_rad) * sin(yaw_rad)
-        y = sin(pitch_rad)
-        z = -cos(pitch_rad) * cos(yaw_rad)
+    def handle_keyboard(self, keys, models):
+        
+        if self.is_dead: return
+        move = glm.vec3(0)
 
-        return (x, y, z)
+        if keys[pygame.K_w]:
+            move += glm.vec3(self.front.x, 0, self.front.z)
+        if keys[pygame.K_s]:
+            move -= glm.vec3(self.front.x, 0, self.front.z)
+        if keys[pygame.K_a]:
+            move -= glm.vec3(self.right.x, 0, self.right.z)
+        if keys[pygame.K_d]:
+            move += glm.vec3(self.right.x, 0, self.right.z)
 
-    def get_forward_vector_array(self):
-        pitch_rad = np.radians(self.pitch)
-        yaw_rad = np.radians(self.yaw)
+        move = glm.normalize(move) if glm.length(move) > 0 else move
+        move *= self.speed
 
-        x = np.sin(yaw_rad) * np.cos(pitch_rad)
-        y = np.sin(pitch_rad)
-        z = -np.cos(yaw_rad) * np.cos(pitch_rad)
-        return np.array([x, y, z], dtype=np.float32)
+        # Intento de movimiento inicial
+        proposed_position = self.position + glm.vec3(move.x, 0, move.z)
+        proposed_obb = self.get_obb(proposed_position)
+
+        # Detectar colisiones con cualquier collider de cada modelo
+        colliding_models = [m for m in models if any(proposed_obb.intersects(c) for c in m.colliders)]
+
+        if not colliding_models:
+            self.position.x = proposed_position.x
+            self.position.z = proposed_position.z
+        else:
+            # Calcular normal promedio de colisión
+            avg_normal = glm.vec3(0)
+            for model in colliding_models:
+                diff = self.position - model.position
+                if glm.length(diff) > 0:
+                    avg_normal += glm.normalize(diff)
+            avg_normal = glm.normalize(avg_normal)
+
+            # Proyección del movimiento sobre el plano tangente
+            projected_move = move - glm.dot(move, avg_normal) * avg_normal
+
+            # Segundo intento de movimiento
+            if glm.length(projected_move) > 0.001:
+                adjusted_position = self.position + glm.vec3(projected_move.x, 0, projected_move.z)
+                adjusted_obb = self.get_obb(adjusted_position)
+                if not any(any(adjusted_obb.intersects(c) for c in m.colliders) for m in models):
+                    self.position.x = adjusted_position.x
+                    self.position.z = adjusted_position.z
+
+        # Salto
+        if keys[pygame.K_SPACE] and self.on_ground:
+            self.velocity.y = self.jump_strength
+            self.on_ground = False
+
+    
+    def get_view_matrix(self, keys, mx, my, models=[]):
+        self.handle_keyboard(keys, models)
+        self.apply_physics(models)
+        self.update_recoil(1.0)
+        self.handle_mouse_motion(mx, my)
+        
+     
+        view = glm.lookAt(self.position, self.position + self.front, self.up)
+
+        if self.is_dead:
+            rot = glm.mat4(1.0)
+            rot = glm.rotate(rot, glm.radians(self.rotation_x), glm.vec3(1, 0, 0))
+            rot = glm.rotate(rot, glm.radians(self.rotation_z), glm.vec3(0, 0, 1))
+            return rot * view
+        else:
+            return view
+    
+    def get_obb(self, custom_position=None):
+        center = custom_position if custom_position else self.position
+        size = glm.vec3(1.0, 1.8, 1.0)  # higher hitbox
+
+        # Yaw rotation
+        yaw_rad = glm.radians(self.yaw)
+        rot = glm.rotate(glm.mat4(1.0), yaw_rad, glm.vec3(0, 1, 0))
+
+        axis_x = glm.vec3(rot * glm.vec4(1, 0, 0, 0))
+        axis_y = glm.vec3(0, 1, 0)  # sin rotación en Y
+        axis_z = glm.vec3(rot * glm.vec4(0, 0, 1, 0))
+
+        return OBB(center, size, [axis_x, axis_y, axis_z])
+
+    def apply_physics(self, models):
+        # Aply gravity
+        self.velocity.y += self.gravity
+
+        # Calculate new pos
+        new_position = self.position + self.velocity
+
+        # OBB with new pos
+        new_obb = self.get_obb(new_position)
+
+        # Revisar colisión contra el suelo y objetos
+        collided = False
+        for model in models:
+            if any(new_obb.intersects(collider) for collider in model.colliders):
+                collided = True
+                break
+
+        if collided:
+            if self.velocity.y < 0:  # Solo lo bloquea si está cayendo
+                self.velocity.y = 0
+                self.on_ground = True
+            else:
+                self.velocity.y = 0
+            return  # No se mueve en Y
+        else:
+            self.position = new_position
+            self.on_ground = False

@@ -1,134 +1,207 @@
-import os
+import moderngl
 import numpy as np
-from OpenGL.GL import *
-from PIL import Image
+import glm
+import logging, trimesh
+from obb import OBB
+from aabb import AABB
+from pywavefront import Wavefront
+logging.getLogger('pywavefront').setLevel(logging.ERROR)
 
 class Model:
-    def __init__(self, obj_path, position=(0, 0, 0), scale=1.0, rotation=(0, 0, 0)):
-        self.vertices = []
-        self.normals = []
-        self.texcoords = []
-        self.faces = []
-        self.materials = {}
-        self.current_material = None
-        self.textures = {}
-
-        self.position = np.array(position, dtype=np.float32)
-        self.scale = scale
-        self.rotation = np.array(rotation, dtype=np.float32)
-
-        full_path = os.path.join("models", obj_path)
-        self.load_obj(full_path)
+    def __init__(self, ctx, program, model_path, position=(0,0,0), rotation=(0,0,0), scale=(1.0,1.0,1.0), size=1.0, name="model", visible=True):
+        self.ctx = ctx
+        self.position = glm.vec3(position[0], position[1], position[2])
+        self.rotation = glm.vec3(rotation[0], rotation[1], rotation[2]) 
+        self.scale = glm.vec3(scale[0], scale[1], scale [2])
+        self.visible = visible
+        self.name = name
         
-    def get_aabb(self):
-        """Devuelve los extremos del bounding box en coordenadas globales"""
-        if not self.vertices:
-            return None
+        if size != 1.0:
+            self.scale = glm.vec3(size, size, size)
+        
+        path = f"models/{model_path}"
+        self.load_model(path, program)
+        
+    def __str__(self):
+        return self.name
 
-        scaled_vertices = np.array(self.vertices) * self.scale
-        min_local = np.min(scaled_vertices, axis=0)
-        max_local = np.max(scaled_vertices, axis=0)
+    def compute_aabb(self, vertices_np):
+        reshaped = vertices_np.reshape(-1, 3)
+        min_corner = reshaped.min(axis=0)
+        max_corner = reshaped.max(axis=0)
+        self.aabb = AABB(min_corner, max_corner)
+    
+    def get_obb(self, custom_position=None):
+        # Centro y tamaño local del modelo (basado en AABB)
+        local_center = (self.aabb.min + self.aabb.max) * 0.5
+        size = (self.aabb.max - self.aabb.min) * self.scale  # Escala afecta tamaño
 
-        min_world = self.position + min_local
-        max_world = self.position + max_local
+        # Base position: posición actual o personalizada
+        base_position = custom_position if custom_position else self.position
 
-        return min_world, max_world
+        # Matriz de transformación total
+        model_mat = glm.mat4(1.0)
+        model_mat = glm.translate(model_mat, base_position)
+        model_mat = glm.rotate(model_mat, glm.radians(self.rotation.y), glm.vec3(0, 1, 0))
+        model_mat = glm.rotate(model_mat, glm.radians(self.rotation.x), glm.vec3(1, 0, 0))
+        model_mat = glm.rotate(model_mat, glm.radians(self.rotation.z), glm.vec3(0, 0, 1))
+        model_mat = glm.scale(model_mat, self.scale)
+
+        # Centro en espacio global
+        rotated_center = glm.vec3(model_mat * glm.vec4(local_center, 1.0))
+
+        # Ejes orientados
+        axis_x = glm.vec3(model_mat * glm.vec4(1, 0, 0, 0))
+        axis_y = glm.vec3(model_mat * glm.vec4(0, 1, 0, 0))
+        axis_z = glm.vec3(model_mat * glm.vec4(0, 0, 1, 0))
+
+        return OBB(rotated_center, size, [axis_x, axis_y, axis_z])
+
+
+    def load_model(self, path, program):
+        self.colliders = []
+        scene = Wavefront(path, collect_faces=True, parse=True)
+        vertices = []
+        normals = []
+        colors = []
+
+        for name, mesh in scene.meshes.items():
+            mat_color = (1.0, 1.0, 1.0)
+            if mesh.materials:
+                material = mesh.materials[0]
+                if hasattr(material, 'diffuse'):
+                    mat_color = material.diffuse[:3]
+
+            mesh_vertices = []
+
+            for face in mesh.faces:
+                v0 = glm.vec3(scene.vertices[face[0]][:3])
+                v1 = glm.vec3(scene.vertices[face[1]][:3])
+                v2 = glm.vec3(scene.vertices[face[2]][:3])
+
+                edge1 = v1 - v0
+                edge2 = v2 - v0
+                normal = glm.normalize(glm.cross(edge1, edge2))
+
+                for vertex_i in face:
+                    vertex = scene.vertices[vertex_i]
+                    vertices.extend(vertex[:3])
+                    normals.extend(normal)
+                    colors.extend(mat_color)
+                    mesh_vertices.append(vertex[:3])
+
+            # Si el nombre del mesh es collider, lo registramos como OBB separado
+            if name.lower().startswith("collision_") and mesh_vertices:
+                mesh_np = np.array(mesh_vertices, dtype='f4').reshape(-1, 3)
+                min_corner = mesh_np.min(axis=0)
+                max_corner = mesh_np.max(axis=0)
+                local_center = (min_corner + max_corner) * 0.5
+                
+                size = max_corner - min_corner
+
+                # Aplicar grosor mínimo a planos
+                min_thickness = 0.2
+                for i in range(3):
+                    if size[i] < min_thickness:
+                        size[i] = min_thickness
+
+                # Aplicar la escala del modelo
+                size *= self.scale
+
+                # Rotación total del modelo
+                rot_x = glm.rotate(glm.mat4(1.0), glm.radians(self.rotation.x), glm.vec3(1, 0, 0))
+                rot_y = glm.rotate(glm.mat4(1.0), glm.radians(self.rotation.y), glm.vec3(0, 1, 0))
+                rot_z = glm.rotate(glm.mat4(1.0), glm.radians(self.rotation.z), glm.vec3(0, 0, 1))
+                rot = rot_z * rot_y * rot_x
+
+                axis_x = glm.vec3(rot * glm.vec4(1, 0, 0, 0))
+                axis_y = glm.vec3(rot * glm.vec4(0, 1, 0, 0))
+                axis_z = glm.vec3(rot * glm.vec4(0, 0, 1, 0))
+
+                rotated_center = glm.vec3(rot * glm.vec4(local_center * self.scale, 1.0))
+                world_center = self.position + rotated_center
+
+                obb = OBB(world_center, size, [axis_x, axis_y, axis_z])
+                self.colliders.append(obb)
+                
+        
+            
+
+        vertices_np = np.array(vertices, dtype='f4')
+        normals_np = np.array(normals, dtype='f4')
+        colors_np = np.array(colors, dtype='f4')
+
+        data = np.hstack([
+            vertices_np.reshape(-1, 3),
+            normals_np.reshape(-1, 3),
+            colors_np.reshape(-1, 3)
+        ]).astype('f4')
+
+        vbo = self.ctx.buffer(data.tobytes())
+        self.vao = self.ctx.vertex_array(
+            program,
+            [(vbo, '3f 3f 3f', 'in_position', 'in_normal', 'in_color')]
+        )
+        self.vertex_count = len(vertices) // 3
+        self.compute_aabb(vertices_np)
+        
+        if self.colliders == []:
+            self.colliders = [self.get_obb()]
 
     
+    def draw(self, program, proj, view, camera_position):
+        
+        if not self.visible: return
+        
+        model_mat = glm.mat4(1.0)
+        model_mat = glm.translate(model_mat, self.position)
+        model_mat = glm.rotate(model_mat, glm.radians(self.rotation.y), glm.vec3(0, 1, 0))
+        model_mat = glm.rotate(model_mat, glm.radians(self.rotation.x), glm.vec3(1, 0, 0))
+        model_mat = glm.rotate(model_mat, glm.radians(self.rotation.z), glm.vec3(0, 0, 1))
+        model_mat = glm.scale(model_mat, self.scale)
 
-    def load_obj(self, path):
-        dir_path = os.path.dirname(path)
-        with open(path, 'r') as file:
-            for line in file:
-                if line.startswith('mtllib'):
-                    mtl_file = line.split()[1]
-                    self.load_mtl(os.path.join(dir_path, mtl_file))
-                elif line.startswith('v '):
-                    self.vertices.append(list(map(float, line.split()[1:4])))
-                elif line.startswith('vn '):
-                    self.normals.append(list(map(float, line.split()[1:4])))
-                elif line.startswith('vt '):
-                    self.texcoords.append(list(map(float, line.split()[1:3])))
-                elif line.startswith('usemtl'):
-                    self.current_material = line.split()[1]
-                elif line.startswith('f '):
-                    face = []
-                    for v in line.split()[1:]:
-                        vals = v.split('/')
-                        v_idx = int(vals[0]) - 1
-                        vt_idx = int(vals[1]) - 1 if len(vals) > 1 and vals[1] else None
-                        vn_idx = int(vals[2]) - 1 if len(vals) > 2 and vals[2] else None
-                        face.append((v_idx, vt_idx, vn_idx))
-                    self.faces.append((face, self.current_material))
+        program['model'].write(model_mat.to_bytes())
+        program['view'].write(view.to_bytes())
+        program['proj'].write(proj.to_bytes())
+        program['view_position'].write(camera_position.to_bytes())  # Solo esto es necesario
+        
+        self.vao.render()
+        
+    def draw_obb(self, shader, proj, view):
+        obbs_to_draw = self.colliders if self.colliders else [self.get_obb()]
 
-    def load_mtl(self, path):
-        current_material = None
-        with open(path, 'r') as file:
-            for line in file:
-                if line.startswith('newmtl'):
-                    current_material = line.split()[1]
-                    self.materials[current_material] = {'Kd': [0.8, 0.8, 0.8], 'map_Kd': None}
-                elif line.startswith('Kd') and current_material:
-                    self.materials[current_material]['Kd'] = list(map(float, line.split()[1:4]))
-                elif line.startswith('map_Kd') and current_material:
-                    texture_file = line.split()[1]
-                    full_path = os.path.join(os.path.dirname(path), texture_file)
-                    self.materials[current_material]['map_Kd'] = full_path
-                    self.textures[current_material] = self.load_texture(full_path)
+        mvp = proj * view
+        shader['mvp'].write(mvp.to_bytes())
 
-    def load_texture(self, file_path):
-        image = Image.open(file_path).transpose(Image.FLIP_TOP_BOTTOM)
-        img_data = np.array(image, dtype=np.uint8)
+        for obb in obbs_to_draw:
+            c = obb.center
+            a = obb.axes
+            h = glm.vec3(obb.half_size)
 
-        texture_id = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, texture_id)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data)
-        glGenerateMipmap(GL_TEXTURE_2D)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-        return texture_id
+            corners = []
+            for dx in [-1, 1]:
+                for dy in [-1, 1]:
+                    for dz in [-1, 1]:
+                        corner = c + dx * a[0] * h.x + dy * a[1] * h.y + dz * a[2] * h.z
+                        corners.append([corner.x, corner.y, corner.z])
 
-    def draw(self):
-        glPushMatrix()
-        glTranslatef(*self.position)
-        glRotatef(self.rotation[0], 1, 0, 0)
-        glRotatef(self.rotation[1], 0, 1, 0)
-        glRotatef(self.rotation[2], 0, 0, 1)
-        glScalef(self.scale, self.scale, self.scale)
+            corners = np.array(corners, dtype='f4')
 
-        glEnable(GL_TEXTURE_2D)
+            edges = [
+                0,1, 1,3, 3,2, 2,0,  # base
+                4,5, 5,7, 7,6, 6,4,  # top
+                0,4, 1,5, 2,6, 3,7   # verticales
+            ]
 
-        last_texture = None
-
-        for face, material_name in self.faces:
-            material = self.materials.get(material_name, None)
-            if material:
-                glColor3f(*material['Kd'])
-
-                # Cambiar textura solo si es diferente
-                if material['map_Kd']:
-                    tex_id = self.textures[material_name]
-                    if tex_id != last_texture:
-                        glBindTexture(GL_TEXTURE_2D, tex_id)
-                        last_texture = tex_id
-                else:
-                    if last_texture is not None:
-                        glBindTexture(GL_TEXTURE_2D, 0)
-                        last_texture = None
-
-            glBegin(GL_TRIANGLES)
-            for v_idx, vt_idx, vn_idx in face:
-                if vt_idx is not None:
-                    glTexCoord2f(*self.texcoords[vt_idx])
-                if vn_idx is not None:
-                    glNormal3f(*self.normals[vn_idx])
-                glVertex3f(*self.vertices[v_idx])
-            glEnd()
-
-        glBindTexture(GL_TEXTURE_2D, 0)
-        glDisable(GL_TEXTURE_2D)
-        glPopMatrix()
-    
+            edge_vertices = corners[edges]
+            vbo = self.ctx.buffer(edge_vertices.astype('f4').tobytes())
+            vao = self.ctx.vertex_array(shader, [(vbo, '3f', 'in_position')])
+            vao.render(mode=moderngl.LINES)
+            
+    def remove_colliders(self):
+        self.colliders = []
+        if hasattr(self, 'aabb'):
+            del self.aabb
 
         

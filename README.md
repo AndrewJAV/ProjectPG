@@ -21,6 +21,7 @@ This project began as an educational experiment, and despite its simplicity, it 
 - ✅ Custom `OBJ` model loader with material/texture support
 - ✅ Enemies that track and shoot at the player (`GreenDrone`, `BlueDrone`)
 - ✅ Dynamic lighting (directional, spot, and point lights)
+- ✅ Healthbar Visualization
 - ✅ Skybox implementation
 - ✅ Bullet collision system (player and enemy projectiles)
 - ✅ Weapon view model (`WeaponView`) with aiming and recoil animations

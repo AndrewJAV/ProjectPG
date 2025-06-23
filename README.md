@@ -51,7 +51,7 @@ pip install PyQt5 moderngl numpy pywavefront pillow
 python3 main.py --- Ubuntu
 python main.py  --- Windows
 
-🕹️ Controls
+## 🕹️ Controls
 
 WASD — Move
 Mouse — Look around

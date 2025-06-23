@@ -51,13 +51,16 @@ pip install PyQt5 moderngl numpy pywavefront pillow
 python3 main.py --- Ubuntu
 python main.py  --- Windows
 
+
+
 ## 🕹️ Controls
 
-WASD — Move
-Mouse — Look around
-Left Click — Shoot
-Right Click — Aim (Weapon animation)
-ESC — Exit (or close window)
+- WASD — Move
+- Mouse — Look around
+- Left Click — Shoot
+- Right Click — Aim (Weapon animation)
+- ESC — Exit (or close window)
+
 
 ## Project Structure
 

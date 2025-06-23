@@ -104,6 +104,8 @@ Based on personal research, experimentation, and docs from:
 ## 📜 License
 This project is open-source under the MIT License. Feel free to explore, learn, or contribute!
 
-💬 Final Words
+
+
+## 💬 Final Words
 
 Even though this project is not finished, it's a clear representation of how much you can build with passion and Python. The journey has just begun — more features and polish will be added as learning continues.

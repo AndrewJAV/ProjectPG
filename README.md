@@ -65,29 +65,35 @@ python main.py  --- Windows
 ## Project Structure
 
 .
--├── main.py                # Main application entry
--├── model.py               # Custom 3D model class
--├── bullet.py              # Bullet logic and collision
--├── weapon.py              # Weapon base class
--├── rifle.py / pistol.py / # FPS weapons
--├── player.py              # Player controller
--├── skybox.py              # Skybox rendering
--├── entity.py              # Base class for every moving model
--├── drone.py               # Base class for enemies
--├── OrangeDrone            # Enemy with simple AI
--├── GreenDrone.py          # Enemy with healing AI
--├── BlueDrone.py           # Enemy with simple AI
--├── crosshair.py           # crosshair visualization
--├── bullet_manager.py      # bullet control and interactions
--└── models/                # OBJ models & mtl files
--└── textures/              # textures-skybox
+- ├── main.py                # Main application entry
+- ├── model.py               # Custom 3D model class
+- ├── bullet.py              # Bullet logic and collision
+- ├── weapon.py              # Weapon base class
+- ├── rifle.py / pistol.py / # FPS weapons
+- ├── player.py              # Player controller
+- ├── skybox.py              # Skybox rendering
+- ├── entity.py              # Base class for every moving model
+- ├── drone.py               # Base class for enemies
+- ├── OrangeDrone            # Enemy with simple AI
+- ├── GreenDrone.py          # Enemy with healing AI
+- ├── BlueDrone.py           # Enemy with simple AI
+- ├── crosshair.py           # crosshair visualization
+- ├── bullet_manager.py      # bullet control and interactions
+- └── models/                # OBJ models & mtl files
+- └── textures/              # textures-skybox
 
 
 ## Credits
 Built by Andres Aguilar, Henry Lechado and Brigham Lara, passionate students about learning game development from the ground up.
 - Collaborators:
- @l3ch4d0301205-net
- @Bieliam 
+- @l3ch4d0301205-net
+- @Bieliam 
+
+Models by
+- lev_229   https://sketchfab.com/lev_229
+- bachklamk https://sketchfab.com/Bachklamk
+- f3nix     https://sketchfab.com/f3nix
+
 
 Based on personal research, experimentation, and docs from:
     ModernGL

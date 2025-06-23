@@ -65,25 +65,39 @@ python main.py  --- Windows
 ## Project Structure
 
 .
-├── main.py                # Main application entry
-├── model.py               # Custom 3D model class
-├── bullet.py              # Bullet logic and collision
-├── weapon.py              # Weapon base class
-├── rifle.py / pistol.py / # FPS weapons
-├── player.py              # Player controller
-├── skybox.py              # Skybox rendering
-├── entity.py              # Base class for every moving model
-├── drone.py               # Base class for enemies
-├── OrangeDrone            # Enemy with simple AI
-├── GreenDrone.py          # Enemy with healing AI
-├── BlueDrone.py           # Enemy with simple AI
-├── crosshair.py           # crosshair visualization
-├── bullet_manager.py      # bullet control and interactions
-└── models/                # OBJ models & mtl files
-└── textures/              # textures-skybox
+-├── main.py                # Main application entry
+-├── model.py               # Custom 3D model class
+-├── bullet.py              # Bullet logic and collision
+-├── weapon.py              # Weapon base class
+-├── rifle.py / pistol.py / # FPS weapons
+-├── player.py              # Player controller
+-├── skybox.py              # Skybox rendering
+-├── entity.py              # Base class for every moving model
+-├── drone.py               # Base class for enemies
+-├── OrangeDrone            # Enemy with simple AI
+-├── GreenDrone.py          # Enemy with healing AI
+-├── BlueDrone.py           # Enemy with simple AI
+-├── crosshair.py           # crosshair visualization
+-├── bullet_manager.py      # bullet control and interactions
+-└── models/                # OBJ models & mtl files
+-└── textures/              # textures-skybox
 
 
 ## Credits
+Built by Andres Aguilar, Henry Lechado and Brigham Lara, passionate students about learning game development from the ground up.
+- Collaborators:
+ @l3ch4d0301205-net
+ @Bieliam 
+
+Based on personal research, experimentation, and docs from:
+    ModernGL
+    PyWavefront
+    OpenGL & GLSL tutorials
 
 
+## 📜 License
+This project is open-source under the MIT License. Feel free to explore, learn, or contribute!
 
+💬 Final Words
+
+Even though this project is not finished, it's a clear representation of how much you can build with passion and Python. The journey has just begun — more features and polish will be added as learning continues.
